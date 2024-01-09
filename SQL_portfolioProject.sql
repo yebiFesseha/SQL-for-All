@@ -1,5 +1,5 @@
 --Analysing ETF prices. The data is obtained from Kaggle.
-
+#
 -- Explore the database
 Select * From INFORMATION_SCHEMA.TABLES
 Select * From sys.all_columns
