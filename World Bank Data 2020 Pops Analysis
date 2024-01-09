@@ -1,0 +1,260 @@
+USE World_Pops
+
+# Imported two files from World Band data base. 2020 World Population data and Country Groupings.
+Select * from INFORMATION_SCHEMA.Columns;
+Select * From WDI_Country_Groupings;
+Select * From Population_2020_data_for_SQL_training;
+
+""" 
+Data Analysis Tasks
+1. Check the number of records and columns like as in the case of python pandas.shape
+
+2. Clean the tables, remove duplicates, remove non-string objects from a numerical column and convert it to the proper
+data type
+3. Join the two tables after cleaning them
+4. Update a column
+5. Add a new column
+6. Create a bucket of population density
+7. Work with window functions to analyse the data
+"""
+# *** Create a bucket of population density
+Select * From Population_2020_data_for_SQL_training
+Select Case  
+	   When Population_2020>=1000000000 THEN 'Billionairs'
+	   When Population_2020>=500000000 and Population_2020<1000000000 THEN 'half_Billionairs'
+	   When Population_2020>=100000000 and Population_2020<500000000 THEN 'half_millionairs'
+	   When Population_2020<100000000 THEN 'millionairs'
+	   END pops_bucket, * 
+From Population_2020_data_for_SQL_training;
+
+# *** Find duplicates and drop them
+
+Select * From Pops_2020
+Group by Country;
+With cte As (
+Select *, row_number() Over(Partition By Country Order by Country ASC) rn From pops_2020)
+Select * From cte where rn = 2;
+
+# *** use row number and partition by the primary column and then use a cte or sub-query
+With dup_example AS (
+Select *, row_number() Over(Partition By Country Order by Country ASC) rn From pops_2020
+)
+Delete From dup_example Where rn>1;
+
+# *** check for duplicates
+Select * From (
+Select *, row_number() Over(Partition By Country Order by Country ASC) rn From pops_2020) temp
+Where rn>1
+
+#*** Find non numeric characters in numeric columns and convert them to null instead first before updating the datatype
+
+Select isnumeric(Fert_Rate), CASE WHEN isnumeric(Fert_Rate)=0 THEN Null ELSE Fert_Rate END, * From pops_2020;
+#I ***
+Update Pops_2020
+Set Fert_Rate = Null Where Isnumeric(Fert_Rate)=0;
+#II ***
+Update Pops_2020
+Set Med_Age = Null Where Isnumeric(Med_Age)=0;
+#III ***
+Select Isnumeric(Urban_Pop), * From Pops_2020
+Select Case When Urban_Pop like '%[^0-9]%'
+
+Alter Table Pops_2020
+Drop Column Urban_Pop_Percentage;
+
+Alter Table Pops_2020
+Add Urban_Pops_Percentage nvarchar(50);
+
+Update Pops_2020
+Set Urban_Pop = Case When Isnumeric(Urban_Pop)=1 Then Cast(Urban_Pop as float) Else 0 End
+
+Update Pops_2020
+Set Urban_Pop_Percentage = Case When Isnumeric(Urban_Pop)=1 THEN Urban_Pop Else 'NotaCha' END
+
+Update Pops_2020
+Set Urban_Pops_percentage=Urban_pop
+
+Select *, Case when Isnumeric(Urban_Pops_Percentage)=0 THEN 'CH' END From Pops_2020
+
+Select *, Case When Urban_Pop Like '[0-9]%' Then Urban_Pops_Percentage Else Null End From Pops_2020
+
+Select Urban_Pops_percentage From Pops_2020 Where Urban_Pop Like '%[a-zA-Z]%';
+
+Update Pops_2020
+Set Urban_Pop = Case When Urban_Pop Like '[0-9]%' Then Urban_Pop Else Null END;
+
+Select Substring(Urban_Pops_percentage, 1,2) From Pops_2020;
+Select Right(Urban_Pops_percentage,1), 
+	Charindex('%', Urban_Pops_percentage), Urban_Pops_percentage From Pops_2020;
+
+
+Select Urban_Pops_percentage, Charindex('%', Urban_Pops_percentage),
+	   Substring(Urban_Pops_percentage, 1,Charindex('%', Urban_Pops_percentage)-1)
+	   From Pops_2020;
+Update Pops_2020
+Set Urban_Pops_percentage = Substring(Urban_Pops_percentage, 1, Charindex('%',Urban_Pops_percentage)-1)
+
+# *** Aggregate the number of pops without grouping, first create a column to show the year
+Alter Table Pops_2020
+Add Year int;
+
+Update Pops_2020
+Set Year=2020;
+
+# *** Arithmetic overflow error converting expression to data type int.So Convert Pops to bigint
+Alter Table Pops_2020
+Alter Column Pops Bigint;
+
+# *** Drop Duplicates
+With dups As(
+Select *, Row_Number() Over(Partition By Country Order By Pops) rn From Pops_2020
+		)
+Delete From dups where rn>1
+
+# *** Check if there are duplicates
+With dups As(
+Select *, Row_Number() Over(Partition By Country Order By Pops) rn From Pops_2020
+		)
+Select * From dups Where rn>1;
+
+
+# *** Now that there is no duplicates lets Calculate world share= Country pops/sum(pops) First lets convert the world_share column into a float
+Alter Table Pops_2020
+Alter Column World_Share float;
+
+Update Pops_2020
+Set World_Share = Round(100*Pops/Cast((Select Sum(Pops) From Pops_2020 ) as Float), 4);
+
+# *** Change the Urban_Pops_Percentage to a float as well 
+Alter Table Pops_2020
+Alter Column Urban_Pops_Percentage Float;
+
+# *** Delete or truncate the whole Urban_Pop column
+Alter Table Pops_2020
+Drop Column Urban_Pop;
+
+Update Pops_2020
+Set Fert_Rate = ROUND(Fert_Rate,2);
+
+# *** duplicate Yearly_Change, create the column and then copy the data
+Alter Table Pops_2020
+Add Yearly_Percentage varchar(50);
+
+Update Pops_2020
+Set Yearly_Percentage = Yearly_Change;
+
+# *** Update Yearly change and check the result
+Update Pops_2020
+Set Yearly_Change = Left(Yearly_change, Len(Yearly_change)-1);
+
+# *** Delete the duplicate column
+Alter Table Pops_2020
+Drop Column Yearly_Percentage;
+
+# *** Now Join the pops data with country groups
+
+Select Distinct CountryName, Country From Pops_2020 c
+Right Join Country_Groups cg on c.Country=cg.CountryName
+Where Country is Null
+
+Select * From Pops_2020 Order By Country Asc;
+
+Select * From Country_Groups
+
+# *** Clean the double "
+Update Country_Groups
+Set CountryName = Replace(CountryName, '"', '') Where Charindex('"', CountryName)>0;
+
+# *** Clean any name mismatch
+Alter Table Country_Groups
+Add CountryName_1 varchar(50);
+
+Update Country_Groups
+Set CountryName_1=CountryName;
+
+# *** Now update the name mismatch of Countryname, Get the name from pops_2020, Change it in update, Use N before ', for unicode
+Update Country_Groups
+Set CountryName = 'Venezuela' Where CountryName like '%Venezuela, RB%';
+
+Select * From Country_Groups Where CountryName Like '%Venezuela%';
+Select * From Pops_2020 Where Country like '%Venezuela%';
+
+# *** Only 19 countries left to fix the mismatch...
+Select Distinct CountryName, Country From Pops_2020 c
+Right Join Country_Groups cg on c.Country=cg.CountryName
+Where Country is Null
+
+# *** Now lets join two tables and create a view
+Create View Pops2020 as (
+Select c.CountryCode, c.GroupName, p.* From Pops_2020 p 
+Left Join Country_Groups c ON p.Country =c.CountryName);
+
+# *** To Check the number of records and columns like as in pandas dataframe.shape, here is the best solution I can come up with
+
+With recordCount as 
+(
+	Select Count(*) recordCount, Row_Number() Over(Partition By Count(*) Order By Count(*)) rn From pops2020
+),
+columnsCount as 
+(
+	Select Count(*) columnsCount, Row_Number() Over(Order By Count(*)) rcn From Information_schema.columns
+																				Where Table_Name='Pops2020'
+)
+Select recordCount, columnsCount From recordCount Join columnsCount on recordCount.rn=columnsCount.rcn;
+
+# *** Create a bucket for poulation and count how many of them are in each bucket
+Select *, 
+	  Case
+	   When Pops>=1000000000 THEN 'Billionairs'
+	   When Pops>=500000000 and Pops<1000000000 THEN 'half_Billionairs'
+	   When Pops>=100000000 and Pops<500000000 THEN 'half_millionairs'
+	   When Pops<100000000 THEN 'millionairs'
+	   END as popsBucket
+From pops2020;
+
+# *** Create a column and uodate the column with popsBucket. Since a view cannot be changed, first the table used in the view needs to be updated
+Alter Table pops_2020
+Add popsBucket varchar(50);
+
+Update pops_2020
+Set popsBucket = Case
+	   When Pops>=1000000000 THEN 'Billionairs'
+	   When Pops>=500000000 and Pops<1000000000 THEN 'half_Billionairs'
+	   When Pops>=100000000 and Pops<500000000 THEN 'half_millionairs'
+	   When Pops<100000000 THEN 'millionairs'
+	   END;
+
+# *** Now check the view and join the two tables again and re-create the view. To do that we use Alter view, NOT CREATE
+Alter View Pops2020 
+as (
+Select c.CountryCode, c.GroupName, p.* From Pops_2020 p 
+Left Join Country_Groups c ON p.Country =c.CountryName);
+
+# *** Count the number of countries per each bucket
+With bucket as (
+Select Distinct Country, popsBucket From pops2020)
+Select popsBucket, Count(*) # From bucket Group By popsBucket Order by count(*);
+
+# *** What are the top-5 most populous nations
+With ranking As (Select Distinct Country, pops From pops2020)
+Select Top(5)  Dense_Rank() Over(Order By pops DESC) pops_rank, * From ranking;
+
+# **** But Top(5) will not extract the ties, so we need to use dense rank
+Select * From(
+Select Dense_Rank() Over(Order By pops DESC) pops_rank
+		,* From (Select Distinct Country, pops From pops2020) t1
+		)t2
+Where pops_rank<6;
+
+# *** Use window functions, as a whole and per country_groupings
+With Density As(
+Select * From pops2020 Where GroupName = 'Africa Eastern and Southern'
+)
+Select * From Density Where Density_P_Km =(Select Min(Density_P_Km) From Density)
+
+# *** What is the world total population
+Select Sum(tot_pops) From (Select Distinct Pops tot_pops From pops2020) t;
+
+# ***Total per Country_groupings***
+Select Distinct GroupName, SUM(pops) Over(Partition By GroupName Order By GroupName Desc) gr_tot_pops From pops2020
+Order by gr_tot_pops Desc;
